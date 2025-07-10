@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>贪吃蛇 (带本地排行榜)</title>
+    <style>
+        /* CSS 样式部分 (略有调整) */
+        body {
+            background-color: #f0f0f0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            /* justify-content: center; 移除这行让页面可以滚动 */
+            min-height: 100vh;
+            margin: 20px 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            touch-action: manipulation;
+        }
+        h1 { color: #333; margin-bottom: 10px;}
+
+        /* 新增：游戏区域和排行榜区域的布局 */
+        #game-container {
+            display: flex;
+            flex-wrap: wrap; /* 允许在小屏幕上换行 */
+            justify-content: center;
+            gap: 30px;
+        }
+
+        #game-area {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #game-board {
+            background-color: #fff;
+            border: 4px solid #333;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        #score-board { font-size: 1.5em; margin-top: 10px; color: #555; }
+        #controls { margin-top: 10px; }
+        button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 8px;
+        }
+        #restart-button {
+            background-color: #f44336;
+            display: none;
+        }
+        #game-over-message {
+            display: none;
+            font-size: 1.5em;
+            color: #d9534f;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+
+        /* 手机触控按钮样式 (无变化) */
+        #mobile-controls {
+            margin-top: 20px;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            width: 180px;
+            gap: 10px;
+        }
+        .mobile-btn {
+            background-color: rgba(0, 0, 0, 0.4);
+            color: white;
+            font-size: 24px;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            user-select: none;
+            border: 2px solid rgba(255, 255, 255, 0.5);
+        }
+        #up-btn { grid-column: 2; grid-row: 1; }
+        #left-btn { grid-column: 1; grid-row: 2; }
+        #right-btn { grid-column: 3; grid-row: 2; }
+        #down-btn { grid-column: 2; grid-row: 2; }
+
+        /* --- 新增：排行榜样式 --- */
+        #leaderboard {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            width: 200px;
+            height: fit-content;
+        }
+        #leaderboard h2 {
+            margin-top: 0;
+            color: #4CAF50;
+            text-align: center;
+        }
+        #score-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        #score-list li {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            border-bottom: 1px solid #eee;
+        }
+        #score-list li:last-child {
+            border-bottom: none;
+        }
+        
+    </style>
+</head>
+<body>
+
+    <h1>经典贪吃蛇</h1>
+
+    <div id="game-container">
+        
+        <!-- 游戏区域 -->
+        <div id="game-area">
+            <canvas id="game-board" width="300" height="300"></canvas> <!-- 缩小画布以适应手机屏幕 -->
+            <div id="game-over-message">游戏结束!</div>
+            <div id="score-board">得分: 0</div>
+            <div id="controls">
+                <button id="start-button">开始游戏</button>
+                <button id="restart-button">重新开始</button>
+            </div>
+
+            <!-- 手机触控按钮 -->
+            <div id="mobile-controls">
+                <div id="up-btn" class="mobile-btn">▲</div>
+                <div id="left-btn" class="mobile-btn">◀</div>
+                <div id="down-btn" class="mobile-btn">▼</div>
+                <div id="right-btn" class="mobile-btn">▶</div>
+            </div>
+        </div>
+
+        <!-- --- 新增：排行榜HTML结构 --- -->
+        <div id="leaderboard">
+            <h2>本地高分榜</h2>
+            <ol id="score-list"></ol>
+        </div>
+
+    </div>
+
+
+    <script>
+        // JavaScript 逻辑部分
+
+        // 调整画布尺寸和格子大小以适应屏幕
+        const canvasSize = 300; 
+        const gridSize = 15; 
+        const boardSize = canvasSize / gridSize;
+
+        const gameBoard = document.getElementById('game-board');
+        gameBoard.width = canvasSize;
+        gameBoard.height = canvasSize;
+        
+        const ctx = gameBoard.getContext('2d');
+        const scoreBoard = document.getElementById('score-board');
+        const startButton = document.getElementById('start-button');
+        const restartButton = document.getElementById('restart-button');
+        const gameOverMessage = document.getElementById('game-over-message');
+        const scoreListElement = document.getElementById('score-list'); // 获取排行榜列表元素
+
+        // 手机按钮
+        const upBtn = document.getElementById('up-btn');
+        const downBtn = document.getElementById('down-btn');
+        const leftBtn = document.getElementById('left-btn');
+        const rightBtn = document.getElementById('right-btn');
+
+        let snake, food, score, direction, nextDirection, gameInterval, gameOver;
+
+        // --- 新增：排行榜功能函数 ---
+
+        const MAX_SCORES = 10;
+
+        // 1. 从浏览器的 LocalStorage 加载分数
+        function loadScores() {
+            const scoresJSON = localStorage.getItem('snakeLeaderboard');
+            if (scoresJSON) {
+                return JSON.parse(scoresJSON);
+            }
+            return [];
+        }
+
+        // 2. 保存分数到 LocalStorage
+        function saveScores(scores) {
+            localStorage.setItem('snakeLeaderboard', JSON.stringify(scores));
+        }
+
+        // 3. 更新并显示排行榜
+        function displayLeaderboard() {
+            const scores = loadScores();
+            scoreListElement.innerHTML = ''; // 清空当前列表
+            if (scores.length === 0) {
+                scoreListElement.innerHTML = '<li>暂无记录</li>';
+            } else {
+                scores.forEach(entry => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `<span>${entry.name}</span><span>${entry.score}</span>`;
+                    scoreListElement.appendChild(li);
+                });
+            }
+        }
+
+        // 4. 检查当前分数是否能上榜
+        function checkLeaderboard(currentScore) {
+            if (currentScore === 0) return;
+
+            const scores = loadScores();
+            
+            // 判断是否能上榜 (分数更高，或者榜单未满)
+            const isTopScore = scores.length < MAX_SCORES || currentScore > scores[scores.length - 1].score;
+
+            if (isTopScore) {
+                // 弹窗让用户输入名字
+                let name = prompt("恭喜你创造了新纪录！请输入你的名字：", "匿名玩家");
+                if (!name) name = "匿名玩家";
+                
+                // 添加新分数，排序，并截取前10名
+                scores.push({ name: name, score: currentScore });
+                scores.sort((a, b) => b.score - a.score);
+                if (scores.length > MAX_SCORES) {
+                    scores.pop();
+                }
+                
+                // 保存并更新显示
+                saveScores(scores);
+                displayLeaderboard();
+            }
+        }
+
+
+        // --- 游戏核心逻辑 (基本无变化) ---
+
+        function init() {
+            snake = [{ x: 10, y: 10 }, { x: 9, y: 10 }, { x: 8, y: 10 }];
+            generateFood();
+            score = 0;
+            direction = 'right';
+            nextDirection = 'right';
+            gameOver = false;
+
+            scoreBoard.textContent = `得分: ${score}`;
+            gameOverMessage.style.display = 'none';
+            restartButton.style.display = 'none';
+            startButton.style.display = 'inline-block';
+            displayLeaderboard(); // 初始化时显示排行榜
+        }
+
+        function draw() {
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, 0, gameBoard.width, gameBoard.height);
+            ctx.fillStyle = 'green';
+            snake.forEach(segment => {
+                ctx.fillRect(segment.x * gridSize, segment.y * gridSize, gridSize, gridSize);
+            });
+            ctx.fillStyle = 'red';
+            ctx.fillRect(food.x * gridSize, food.y * gridSize, gridSize, gridSize);
+        }
+
+        function update() {
+            if (gameOver) return;
+            direction = nextDirection;
+            const head = { ...snake[0] };
+            switch (direction) {
+                case 'up': head.y--; break;
+                case 'down': head.y++; break;
+                case 'left': head.x--; break;
+                case 'right': head.x++; break;
+            }
+            if (isCollision(head)) {
+                endGame();
+                return;
+            }
+            snake.unshift(head);
+            if (head.x === food.x && head.y === food.y) {
+                score++;
+                scoreBoard.textContent = `得分: ${score}`;
+                generateFood();
+            } else {
+                snake.pop();
+            }
+        }
+        
+        function generateFood() {
+            while (true) {
+                food = {
+                    x: Math.floor(Math.random() * boardSize),
+                    y: Math.floor(Math.random() * boardSize)
+                };
+                let onSnake = snake.some(segment => segment.x === food.x && segment.y === food.y);
+                if (!onSnake) break;
+            }
+        }
+
+        function isCollision(head) {
+            if (head.x < 0 || head.x >= boardSize || head.y < 0 || head.y >= boardSize) return true;
+            for (let i = 0; i < snake.length; i++) {
+                if (head.x === snake[i].x && head.y === snake[i].y) return true;
+            }
+            return false;
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+        }
+
+        function startGame() {
+            init();
+            if (gameInterval) clearInterval(gameInterval);
+            gameInterval = setInterval(gameLoop, 150);
+            startButton.style.display = 'none';
+        }
+        
+        function endGame() {
+            gameOver = true;
+            clearInterval(gameInterval);
+            gameOverMessage.style.display = 'block';
+            restartButton.style.display = 'inline-block';
+            
+            // --- 新增：游戏结束时检查排行榜 ---
+            checkLeaderboard(score); 
+        }
+
+        function handleDirectionChange(newDirection) {
+            const goingUp = direction === 'up';
+            const goingDown = direction === 'down';
+            const goingLeft = direction === 'left';
+            const goingRight = direction === 'right';
+
+            if (newDirection === 'up' && !goingDown) nextDirection = 'up';
+            if (newDirection === 'down' && !goingUp) nextDirection = 'down';
+            if (newDirection === 'left' && !goingRight) nextDirection = 'left';
+            if (newDirection === 'right' && !goingLeft) nextDirection = 'right';
+        }
+
+        // 事件监听器
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowUp') handleDirectionChange('up');
+            if (e.key === 'ArrowDown') handleDirectionChange('down');
+            if (e.key === 'ArrowLeft') handleDirectionChange('left');
+            if (e.key === 'ArrowRight') handleDirectionChange('right');
+        });
+
+        upBtn.addEventListener('click', () => handleDirectionChange('up'));
+        downBtn.addEventListener('click', () => handleDirectionChange('down'));
+        leftBtn.addEventListener('click', () => handleDirectionChange('left'));
+        rightBtn.addEventListener('click', () => handleDirectionChange('right'));
+
+        startButton.addEventListener('click', startGame);
+        restartButton.addEventListener('click', startGame);
+
+        // 启动游戏和排行榜
+        init();
+        draw();
+
+    </script>
+</body>
+</html>
